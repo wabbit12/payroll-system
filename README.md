@@ -105,6 +105,18 @@ Bank / tax IDs are AES-GCM encrypted before save; UI shows masked values only.
 
 Only `approved` timesheets should be used in Phase 4 pay runs.
 
+## Phase 4 — Pay runs
+
+1. Run `supabase/migrations/006_pay_runs.sql` in the SQL Editor
+2. Use a `payroll_admin` or `super_admin` account
+3. Open **Payroll** → **New pay run** → set period + tax % → create
+4. Review draft line items (gross / tax / net); use **Recalculate** if needed
+
+Rules (MVP):
+- **Salary:** `pay_rate` = amount for this period
+- **Hourly:** approved timesheet hours in range; overtime × 1.5
+- **Tax:** flat % on gross (placeholder)
+
 ## What's next
 
-Phase 4 — Pay run engine (gross → deductions → net)
+Phase 5 — Pay run approval workflow (no payout without approval)

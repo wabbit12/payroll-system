@@ -95,3 +95,51 @@ export type TimesheetWithEntries = Timesheet & {
   employee_name?: string;
   total_hours?: number;
 };
+
+export type PayRunStatus =
+  | "draft"
+  | "pending_approval"
+  | "approved"
+  | "locked";
+
+export type PayRun = {
+  id: string;
+  period_start: string;
+  period_end: string;
+  status: PayRunStatus;
+  tax_rate: number;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  calculated_at: string | null;
+};
+
+export type PayRunLine = {
+  id: string;
+  pay_run_id: string;
+  employee_id: string;
+  employee_name: string;
+  pay_type: PayType;
+  pay_rate: number;
+  regular_hours: number;
+  overtime_hours: number;
+  regular_pay: number;
+  overtime_pay: number;
+  gross_pay: number;
+  tax_amount: number;
+  other_deductions: number;
+  net_pay: number;
+  calc_note: string | null;
+  created_at: string;
+};
+
+export type PayRunWithLines = PayRun & {
+  lines: PayRunLine[];
+  totals: {
+    gross: number;
+    tax: number;
+    net: number;
+    employees: number;
+  };
+};

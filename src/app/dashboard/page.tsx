@@ -107,7 +107,7 @@ export default async function DashboardPage({
       </section>
 
       <p className="mt-8 text-sm text-zinc-600">
-        Phase 3: timesheets. Next: pay runs.{" "}
+        Phase 4: pay runs. Next: approvals.{" "}
         <Link href="/" className="underline">
           Home
         </Link>
