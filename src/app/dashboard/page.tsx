@@ -7,6 +7,7 @@ import type { UserRole } from "@/types/database";
 const NAV: { href: string; label: string; rolesHint: string }[] = [
   { href: "/me", label: "My profile", rolesHint: "all" },
   { href: "/me/timesheets", label: "My timesheets", rolesHint: "all" },
+  { href: "/me/payslips", label: "My payslips", rolesHint: "all" },
   { href: "/manager", label: "Manager approvals", rolesHint: "manager+" },
   { href: "/hr", label: "HR / Employees", rolesHint: "hr_admin" },
   { href: "/payroll", label: "Payroll", rolesHint: "payroll_admin" },
@@ -107,7 +108,7 @@ export default async function DashboardPage({
       </section>
 
       <p className="mt-8 text-sm text-zinc-600">
-        Phase 4: pay runs. Next: approvals.{" "}
+        Phase 6: payslips. Next: payments.{" "}
         <Link href="/" className="underline">
           Home
         </Link>

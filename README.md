@@ -117,6 +117,26 @@ Rules (MVP):
 - **Hourly:** approved timesheet hours in range; overtime × 1.5
 - **Tax:** flat % on gross (placeholder)
 
+## Phase 5 — Pay run approval
+
+1. Run `supabase/migrations/007_pay_run_approval.sql` first (adds `rejected` enum)
+2. Then run `supabase/migrations/008_pay_run_approval_guards.sql` (columns + locks)
+3. On a draft pay run → **Submit for approval**
+4. **Approve** or **Reject** (reject requires a note)
+5. On approved → **Lock pay run** (freezes amounts)
+6. Unapproved / pending / rejected cannot be marked paid (`canMarkPayRunPaid`)
+
+Flow: `draft` → `pending_approval` → `approved` → `locked` (or `rejected` → fix → resubmit)
+
+## Phase 6 — Payslips
+
+1. Run `supabase/migrations/009_payslips.sql` (creates `payslips` table + private Storage bucket)
+2. Approve (or lock) a pay run
+3. Click **Generate payslips**
+4. Employee opens **My payslips** → **Download PDF**
+
+Email “payslip ready” is deferred (Phase 8 / notifications).
+
 ## What's next
 
-Phase 5 — Pay run approval workflow (no payout without approval)
+Phase 7 — Payment provider + payment status

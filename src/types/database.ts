@@ -100,6 +100,7 @@ export type PayRunStatus =
   | "draft"
   | "pending_approval"
   | "approved"
+  | "rejected"
   | "locked";
 
 export type PayRun = {
@@ -113,6 +114,13 @@ export type PayRun = {
   created_at: string;
   updated_at: string;
   calculated_at: string | null;
+  submitted_by: string | null;
+  submitted_at: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  locked_at: string | null;
+  locked_by: string | null;
 };
 
 export type PayRunLine = {
@@ -142,4 +150,21 @@ export type PayRunWithLines = PayRun & {
     net: number;
     employees: number;
   };
+};
+
+export type Payslip = {
+  id: string;
+  pay_run_id: string;
+  pay_run_line_id: string;
+  employee_id: string;
+  storage_path: string;
+  file_name: string;
+  period_start: string;
+  period_end: string;
+  gross_pay: number;
+  tax_amount: number;
+  other_deductions: number;
+  net_pay: number;
+  generated_by: string | null;
+  generated_at: string;
 };

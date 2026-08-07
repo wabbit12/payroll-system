@@ -90,6 +90,10 @@ export default async function MyProfilePage() {
           My timesheets
         </Link>
         {" · "}
+        <Link href="/me/payslips" className="underline">
+          My payslips
+        </Link>
+        {" · "}
         <Link href="/dashboard" className="underline">
           Back to dashboard
         </Link>

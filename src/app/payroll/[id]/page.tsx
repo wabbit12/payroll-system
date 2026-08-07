@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPayRun } from "@/app/payroll/actions";
+import { listPayslipsForRun } from "@/app/payroll/payslip-actions";
 import { PayRunActions } from "@/app/payroll/pay-run-actions";
+import { DownloadPayslipButton } from "@/app/me/payslips/download-button";
+import { payRunStatusLabel } from "@/lib/payroll/status";
 
 export default async function PayRunDetailPage({
   params,
@@ -12,13 +15,20 @@ export default async function PayRunDetailPage({
   const run = await getPayRun(id);
   if (!run) notFound();
 
+  let payslips: Awaited<ReturnType<typeof listPayslipsForRun>> = [];
+  try {
+    payslips = await listPayslipsForRun(id);
+  } catch {
+    payslips = [];
+  }
+
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-12">
-      <h1 className="text-2xl font-semibold tracking-tight">Pay run draft</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Pay run</h1>
       <p className="mt-2 text-sm text-zinc-600">
         {run.period_start} → {run.period_end} ·{" "}
-        <span className="font-mono text-xs">{run.status}</span> · tax{" "}
-        {(run.tax_rate * 100).toFixed(1)}%
+        <span className="font-mono text-xs">{run.status}</span> (
+        {payRunStatusLabel(run.status)}) · tax {(run.tax_rate * 100).toFixed(1)}%
       </p>
 
       <section className="mt-6 grid gap-3 rounded-lg border border-zinc-200 p-4 text-sm sm:grid-cols-4">
@@ -45,6 +55,35 @@ export default async function PayRunDetailPage({
           </div>
         </div>
       </section>
+
+      {(run.submitted_at || run.reviewed_at || run.locked_at || run.review_note) && (
+        <dl className="mt-4 grid gap-2 rounded-lg border border-zinc-100 p-4 text-sm sm:grid-cols-2">
+          {run.submitted_at ? (
+            <div>
+              <dt className="text-zinc-500">Submitted</dt>
+              <dd>{new Date(run.submitted_at).toLocaleString()}</dd>
+            </div>
+          ) : null}
+          {run.reviewed_at ? (
+            <div>
+              <dt className="text-zinc-500">Reviewed</dt>
+              <dd>{new Date(run.reviewed_at).toLocaleString()}</dd>
+            </div>
+          ) : null}
+          {run.locked_at ? (
+            <div>
+              <dt className="text-zinc-500">Locked</dt>
+              <dd>{new Date(run.locked_at).toLocaleString()}</dd>
+            </div>
+          ) : null}
+          {run.review_note ? (
+            <div className="sm:col-span-2">
+              <dt className="text-zinc-500">Review note</dt>
+              <dd>{run.review_note}</dd>
+            </div>
+          ) : null}
+        </dl>
+      )}
 
       <div className="mt-6">
         <PayRunActions payRunId={run.id} status={run.status} />
@@ -100,10 +139,39 @@ export default async function PayRunDetailPage({
       </div>
 
       <p className="mt-8 text-sm text-zinc-600">
-        Phase 4 done when draft totals look right. Phase 5 adds approval before
-        payout.
+        Flow: draft → submit → approve → lock → generate payslips. Unapproved
+        runs cannot be marked paid.
       </p>
-      <p className="mt-2 text-sm">
+
+      {payslips.length > 0 ? (
+        <section className="mt-8">
+          <h2 className="text-sm font-medium text-zinc-500">Generated payslips</h2>
+          <ul className="mt-3 divide-y divide-zinc-100 border-t border-zinc-200 text-sm">
+            {payslips.map((slip) => {
+              const name =
+                run.lines.find((l) => l.employee_id === slip.employee_id)
+                  ?.employee_name ?? slip.employee_id;
+              return (
+              <li
+                key={slip.id}
+                className="flex flex-wrap items-center justify-between gap-3 py-3"
+              >
+                <div>
+                  {name}
+                  <div className="text-xs text-zinc-500">
+                    Net ${Number(slip.net_pay).toFixed(2)} ·{" "}
+                    {new Date(slip.generated_at).toLocaleString()}
+                  </div>
+                </div>
+                <DownloadPayslipButton payslipId={slip.id} />
+              </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+
+      <p className="mt-8 text-sm">
         <Link href="/payroll" className="underline">
           Back to pay runs
         </Link>

@@ -7,6 +7,10 @@ import {
   calculateEmployeePay,
   summarizeApprovedHours,
 } from "@/lib/payroll/calculate";
+import {
+  canMarkPayRunPaid,
+  isPayRunEditable,
+} from "@/lib/payroll/status";
 import { createClient } from "@/lib/supabase/server";
 import type {
   Employee,
@@ -153,8 +157,8 @@ export async function calculatePayRun(
 
   if (runError) return { error: runError.message };
   if (!run) return { error: "Pay run not found." };
-  if (run.status !== "draft") {
-    return { error: "Only draft pay runs can be recalculated." };
+  if (!isPayRunEditable(run.status)) {
+    return { error: "Only draft or rejected pay runs can be recalculated." };
   }
 
   const taxRate = Number(run.tax_rate);
@@ -261,7 +265,12 @@ export async function calculatePayRun(
 
   const { error: updateError } = await supabase
     .from("pay_runs")
-    .update({ calculated_at: new Date().toISOString() })
+    .update({
+      calculated_at: new Date().toISOString(),
+      // Recalc after reject keeps it as draft for resubmit clarity.
+      status: run.status === "rejected" ? "draft" : run.status,
+      review_note: run.status === "rejected" ? null : run.review_note,
+    })
     .eq("id", payRunId);
 
   if (updateError) return { error: updateError.message };
@@ -291,4 +300,150 @@ export async function deleteDraftPayRun(
 
   revalidatePath("/payroll");
   redirect("/payroll");
+}
+
+export async function submitPayRunForApproval(
+  payRunId: string,
+): Promise<PayRunFormState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const run = await getPayRun(payRunId);
+  if (!run) return { error: "Pay run not found." };
+  if (!isPayRunEditable(run.status)) {
+    return { error: "Only draft or rejected runs can be submitted." };
+  }
+  if (run.lines.length === 0) {
+    return { error: "Calculate the pay run before submitting." };
+  }
+  if (run.totals.gross <= 0) {
+    return { error: "Gross total is zero — check employees and timesheets." };
+  }
+
+  const { error } = await supabase
+    .from("pay_runs")
+    .update({
+      status: "pending_approval",
+      submitted_by: user.id,
+      submitted_at: new Date().toISOString(),
+      reviewed_by: null,
+      reviewed_at: null,
+      review_note: null,
+    })
+    .eq("id", payRunId)
+    .in("status", ["draft", "rejected"]);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/payroll");
+  revalidatePath(`/payroll/${payRunId}`);
+  return { ok: true };
+}
+
+export async function approvePayRun(
+  payRunId: string,
+  _prev: PayRunFormState,
+  formData: FormData,
+): Promise<PayRunFormState> {
+  const review_note = String(formData.get("review_note") ?? "").trim() || null;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const { error } = await supabase
+    .from("pay_runs")
+    .update({
+      status: "approved",
+      reviewed_by: user.id,
+      reviewed_at: new Date().toISOString(),
+      review_note,
+    })
+    .eq("id", payRunId)
+    .eq("status", "pending_approval");
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/payroll");
+  revalidatePath(`/payroll/${payRunId}`);
+  return { ok: true };
+}
+
+export async function rejectPayRun(
+  payRunId: string,
+  _prev: PayRunFormState,
+  formData: FormData,
+): Promise<PayRunFormState> {
+  const review_note = String(formData.get("review_note") ?? "").trim();
+  if (!review_note) {
+    return { error: "A review note is required when rejecting." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const { error } = await supabase
+    .from("pay_runs")
+    .update({
+      status: "rejected",
+      reviewed_by: user.id,
+      reviewed_at: new Date().toISOString(),
+      review_note,
+    })
+    .eq("id", payRunId)
+    .eq("status", "pending_approval");
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/payroll");
+  revalidatePath(`/payroll/${payRunId}`);
+  return { ok: true };
+}
+
+export async function lockPayRun(payRunId: string): Promise<PayRunFormState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const { error } = await supabase
+    .from("pay_runs")
+    .update({
+      status: "locked",
+      locked_by: user.id,
+      locked_at: new Date().toISOString(),
+    })
+    .eq("id", payRunId)
+    .eq("status", "approved");
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/payroll");
+  revalidatePath(`/payroll/${payRunId}`);
+  return { ok: true };
+}
+
+/**
+ * Phase 7 will call this. Phase 5 only enforces the gate:
+ * unapproved runs cannot be marked paid.
+ */
+export async function assertPayRunPayable(
+  payRunId: string,
+): Promise<PayRunFormState> {
+  const run = await getPayRun(payRunId);
+  if (!run) return { error: "Pay run not found." };
+  if (!canMarkPayRunPaid(run.status)) {
+    return {
+      error: `Cannot mark paid: status is "${run.status}". Approve (and optionally lock) first.`,
+    };
+  }
+  return { ok: true };
 }
