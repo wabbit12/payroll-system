@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { getMyEmployee } from "@/app/hr/employees/actions";
 import { getPayRun } from "@/app/payroll/actions";
+import { writeAuditLog } from "@/lib/audit/log";
+import { notifyUser } from "@/lib/notifications/notify";
 import { buildPayslipPdf } from "@/lib/payroll/payslip-pdf";
 import { canGeneratePayslips } from "@/lib/payroll/status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -81,13 +83,14 @@ export async function generatePayslipsForRun(
     const { data: employee } = await supabase
       .from("employees")
       .select(
-        "id, full_name, email, employee_number, job_title, department, pay_type",
+        "id, user_id, full_name, email, employee_number, job_title, department, pay_type",
       )
       .eq("id", line.employee_id)
       .maybeSingle<
         Pick<
           Employee,
           | "id"
+          | "user_id"
           | "full_name"
           | "email"
           | "employee_number"
@@ -114,6 +117,9 @@ export async function generatePayslipsForRun(
       grossPay: line.gross_pay,
       taxAmount: line.tax_amount,
       otherDeductions: line.other_deductions,
+      sssEmployee: line.sss_employee,
+      philhealthEmployee: line.philhealth_employee,
+      pagibigEmployee: line.pagibig_employee,
       netPay: line.net_pay,
       calcNote: line.calc_note,
     });
@@ -157,11 +163,29 @@ export async function generatePayslipsForRun(
       };
     }
 
+    if (employee?.user_id) {
+      await notifyUser({
+        userId: employee.user_id,
+        title: "Payslip ready",
+        body: `Your payslip for ${run.period_start} to ${run.period_end} is available.`,
+        link: "/me/payslips",
+      });
+    }
+
     count += 1;
   }
 
+  await writeAuditLog({
+    action: "payslip.generate",
+    entityType: "pay_run",
+    entityId: payRunId,
+    summary: `Generated ${count} payslip(s)`,
+    metadata: { count },
+  });
+
   revalidatePath(`/payroll/${payRunId}`);
   revalidatePath("/me/payslips");
+  revalidatePath("/notifications");
   return { ok: true, count };
 }
 

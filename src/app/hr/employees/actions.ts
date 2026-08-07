@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { writeAuditLog } from "@/lib/audit/log";
 import { encryptField, decryptField, maskSecret } from "@/lib/crypto/fields";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -220,6 +221,22 @@ export async function createEmployee(
 
   if (error) return { error: error.message };
 
+  await writeAuditLog({
+    action: "employee.create",
+    entityType: "employee",
+    entityId: data.id,
+    summary: `Created employee ${fields.full_name}`,
+    metadata: {
+      email: fields.email,
+      pay_type: fields.pay_type,
+      sensitive_fields_set: {
+        tax_id: !!fields.tax_id,
+        bank_account: !!fields.bank_account,
+        bank_routing: !!fields.bank_routing,
+      },
+    },
+  });
+
   revalidatePath("/hr");
   revalidatePath("/me");
   redirect(`/hr/employees/${data.id}`);
@@ -270,6 +287,22 @@ export async function updateEmployee(
     .eq("id", id);
 
   if (error) return { error: error.message };
+
+  await writeAuditLog({
+    action: "employee.update",
+    entityType: "employee",
+    entityId: id,
+    summary: `Updated employee ${fields.full_name}`,
+    metadata: {
+      email: fields.email,
+      pay_rate_changed: true,
+      sensitive_fields_updated: {
+        tax_id: !!fields.tax_id,
+        bank_account: !!fields.bank_account,
+        bank_routing: !!fields.bank_routing,
+      },
+    },
+  });
 
   revalidatePath("/hr");
   revalidatePath(`/hr/employees/${id}`);

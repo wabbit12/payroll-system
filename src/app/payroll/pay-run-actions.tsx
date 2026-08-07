@@ -10,17 +10,24 @@ import {
   submitPayRunForApproval,
   type PayRunFormState,
 } from "@/app/payroll/actions";
+import {
+  failSimulatedPayment,
+  markSimulatedPaid,
+  startSimulatedPayment,
+} from "@/app/payroll/payment-actions";
 import { generatePayslipsForRun } from "@/app/payroll/payslip-actions";
-import type { PayRunStatus } from "@/types/database";
+import type { PaymentStatus, PayRunStatus } from "@/types/database";
 
 const initial: PayRunFormState = {};
 
 export function PayRunActions({
   payRunId,
   status,
+  paymentStatus,
 }: {
   payRunId: string;
   status: PayRunStatus;
+  paymentStatus: PaymentStatus;
 }) {
   const [msg, setMsg] = useState<PayRunFormState & { count?: number }>({});
   const [pending, start] = useTransition();
@@ -36,6 +43,8 @@ export function PayRunActions({
     reject,
     initial,
   );
+
+  const canPay = status === "approved" || status === "locked";
 
   return (
     <div className="space-y-4">
@@ -131,9 +140,6 @@ export function PayRunActions({
 
       {status === "approved" && (
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm text-zinc-600">
-            Approved. Lock to freeze amounts, or generate payslips now.
-          </p>
           <button
             type="button"
             disabled={pending}
@@ -163,13 +169,10 @@ export function PayRunActions({
 
       {status === "locked" && (
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm text-zinc-600">
-            Locked — amounts are immutable. Generate or refresh payslip PDFs.
-          </p>
           <button
             type="button"
             disabled={pending}
-            className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+            className="rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:opacity-60"
             onClick={() =>
               start(async () => {
                 setMsg(await generatePayslipsForRun(payRunId));
@@ -178,6 +181,92 @@ export function PayRunActions({
           >
             {pending ? "Generating…" : "Generate payslips"}
           </button>
+        </div>
+      )}
+
+      {canPay && (
+        <div className="space-y-3 rounded-lg border border-zinc-200 p-4">
+          <p className="text-sm font-medium">Payment (simulated · PH MVP)</p>
+          <p className="text-sm text-zinc-600">
+            No live bank rails. Status:{" "}
+            <span className="font-mono text-xs">{paymentStatus}</span>
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {(paymentStatus === "unpaid" || paymentStatus === "failed") && (
+              <>
+                <button
+                  type="button"
+                  disabled={pending}
+                  className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  onClick={() =>
+                    start(async () => {
+                      setMsg(await markSimulatedPaid(payRunId));
+                    })
+                  }
+                >
+                  Mark paid (simulate)
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  className="rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:opacity-60"
+                  onClick={() =>
+                    start(async () => {
+                      setMsg(await startSimulatedPayment(payRunId));
+                    })
+                  }
+                >
+                  Mark pending
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  className="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 disabled:opacity-60"
+                  onClick={() =>
+                    start(async () => {
+                      setMsg(await failSimulatedPayment(payRunId));
+                    })
+                  }
+                >
+                  Mark failed
+                </button>
+              </>
+            )}
+            {paymentStatus === "pending" && (
+              <>
+                <button
+                  type="button"
+                  disabled={pending}
+                  className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  onClick={() =>
+                    start(async () => {
+                      setMsg(await markSimulatedPaid(payRunId));
+                    })
+                  }
+                >
+                  Complete as paid
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  className="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 disabled:opacity-60"
+                  onClick={() =>
+                    start(async () => {
+                      setMsg(await failSimulatedPayment(payRunId));
+                    })
+                  }
+                >
+                  Mark failed
+                </button>
+              </>
+            )}
+            <a
+              href={`/api/payroll/${payRunId}/export`}
+              className="rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            >
+              Download bank CSV
+            </a>
+          </div>
         </div>
       )}
 

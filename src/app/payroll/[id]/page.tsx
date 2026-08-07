@@ -4,7 +4,7 @@ import { getPayRun } from "@/app/payroll/actions";
 import { listPayslipsForRun } from "@/app/payroll/payslip-actions";
 import { PayRunActions } from "@/app/payroll/pay-run-actions";
 import { DownloadPayslipButton } from "@/app/me/payslips/download-button";
-import { payRunStatusLabel } from "@/lib/payroll/status";
+import { payRunStatusLabel, paymentStatusLabel } from "@/lib/payroll/status";
 
 export default async function PayRunDetailPage({
   params,
@@ -28,7 +28,10 @@ export default async function PayRunDetailPage({
       <p className="mt-2 text-sm text-zinc-600">
         {run.period_start} → {run.period_end} ·{" "}
         <span className="font-mono text-xs">{run.status}</span> (
-        {payRunStatusLabel(run.status)}) · tax {(run.tax_rate * 100).toFixed(1)}%
+        {payRunStatusLabel(run.status)}) · PH statutory (SSS / PhilHealth /
+        Pag-IBIG / BIR) · payment{" "}
+        <span className="font-mono text-xs">{run.payment_status}</span> (
+        {paymentStatusLabel(run.payment_status)})
       </p>
 
       <section className="mt-6 grid gap-3 rounded-lg border border-zinc-200 p-4 text-sm sm:grid-cols-4">
@@ -39,24 +42,32 @@ export default async function PayRunDetailPage({
         <div>
           <div className="text-zinc-500">Gross</div>
           <div className="text-lg font-semibold">
-            ${run.totals.gross.toFixed(2)}
+            ₱{run.totals.gross.toFixed(2)}
           </div>
         </div>
         <div>
-          <div className="text-zinc-500">Tax</div>
+          <div className="text-zinc-500">BIR + statutory</div>
           <div className="text-lg font-semibold">
-            ${run.totals.tax.toFixed(2)}
+            ₱
+            {(
+              run.totals.tax +
+              run.lines.reduce((s, l) => s + Number(l.other_deductions), 0)
+            ).toFixed(2)}
           </div>
         </div>
         <div>
           <div className="text-zinc-500">Net</div>
           <div className="text-lg font-semibold">
-            ${run.totals.net.toFixed(2)}
+            ₱{run.totals.net.toFixed(2)}
           </div>
         </div>
       </section>
 
-      {(run.submitted_at || run.reviewed_at || run.locked_at || run.review_note) && (
+      {(run.submitted_at ||
+        run.reviewed_at ||
+        run.locked_at ||
+        run.review_note ||
+        run.payment_reference) && (
         <dl className="mt-4 grid gap-2 rounded-lg border border-zinc-100 p-4 text-sm sm:grid-cols-2">
           {run.submitted_at ? (
             <div>
@@ -76,28 +87,52 @@ export default async function PayRunDetailPage({
               <dd>{new Date(run.locked_at).toLocaleString()}</dd>
             </div>
           ) : null}
+          {run.payment_reference ? (
+            <div>
+              <dt className="text-zinc-500">Payment ref</dt>
+              <dd className="font-mono text-xs">{run.payment_reference}</dd>
+            </div>
+          ) : null}
+          {run.payment_completed_at ? (
+            <div>
+              <dt className="text-zinc-500">Payment completed</dt>
+              <dd>{new Date(run.payment_completed_at).toLocaleString()}</dd>
+            </div>
+          ) : null}
           {run.review_note ? (
             <div className="sm:col-span-2">
               <dt className="text-zinc-500">Review note</dt>
               <dd>{run.review_note}</dd>
             </div>
           ) : null}
+          {run.payment_note ? (
+            <div className="sm:col-span-2">
+              <dt className="text-zinc-500">Payment note</dt>
+              <dd>{run.payment_note}</dd>
+            </div>
+          ) : null}
         </dl>
       )}
 
       <div className="mt-6">
-        <PayRunActions payRunId={run.id} status={run.status} />
+        <PayRunActions
+          payRunId={run.id}
+          status={run.status}
+          paymentStatus={run.payment_status}
+        />
       </div>
 
       <div className="mt-8 overflow-x-auto">
-        <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
           <thead>
             <tr className="border-b border-zinc-200 text-zinc-500">
               <th className="py-2 pr-3 font-medium">Employee</th>
               <th className="py-2 pr-3 font-medium">Type</th>
-              <th className="py-2 pr-3 font-medium">Hours</th>
               <th className="py-2 pr-3 font-medium">Gross</th>
-              <th className="py-2 pr-3 font-medium">Tax</th>
+              <th className="py-2 pr-3 font-medium">SSS</th>
+              <th className="py-2 pr-3 font-medium">PhilHealth</th>
+              <th className="py-2 pr-3 font-medium">Pag-IBIG</th>
+              <th className="py-2 pr-3 font-medium">BIR</th>
               <th className="py-2 pr-3 font-medium">Net</th>
               <th className="py-2 font-medium">Note</th>
             </tr>
@@ -105,8 +140,13 @@ export default async function PayRunDetailPage({
           <tbody>
             {run.lines.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-6 text-zinc-500">
-                  No lines. Add active employees, then recalculate.
+                <td colSpan={9} className="py-6 text-zinc-500">
+                  No lines. Add active employees, then recalculate. If columns
+                  are missing, run{" "}
+                  <code className="rounded bg-zinc-100 px-1">
+                    012_ph_statutory.sql
+                  </code>
+                  .
                 </td>
               </tr>
             ) : null}
@@ -115,19 +155,26 @@ export default async function PayRunDetailPage({
                 <td className="py-3 pr-3">
                   <div className="font-medium">{line.employee_name}</div>
                   <div className="text-xs text-zinc-500">
-                    rate ${line.pay_rate.toFixed(2)}
+                    rate ₱{line.pay_rate.toFixed(2)}
+                    {line.monthly_compensation != null
+                      ? ` · monthly est. ₱${Number(line.monthly_compensation).toFixed(0)}`
+                      : ""}
                   </div>
                 </td>
                 <td className="py-3 pr-3 font-mono text-xs">{line.pay_type}</td>
-                <td className="py-3 pr-3 text-xs">
-                  reg {line.regular_hours.toFixed(2)}
-                  <br />
-                  ot {line.overtime_hours.toFixed(2)}
+                <td className="py-3 pr-3">₱{line.gross_pay.toFixed(2)}</td>
+                <td className="py-3 pr-3">
+                  ₱{Number(line.sss_employee ?? 0).toFixed(2)}
                 </td>
-                <td className="py-3 pr-3">${line.gross_pay.toFixed(2)}</td>
-                <td className="py-3 pr-3">${line.tax_amount.toFixed(2)}</td>
+                <td className="py-3 pr-3">
+                  ₱{Number(line.philhealth_employee ?? 0).toFixed(2)}
+                </td>
+                <td className="py-3 pr-3">
+                  ₱{Number(line.pagibig_employee ?? 0).toFixed(2)}
+                </td>
+                <td className="py-3 pr-3">₱{line.tax_amount.toFixed(2)}</td>
                 <td className="py-3 pr-3 font-medium">
-                  ${line.net_pay.toFixed(2)}
+                  ₱{line.net_pay.toFixed(2)}
                 </td>
                 <td className="py-3 text-xs text-zinc-500">
                   {line.calc_note ?? "—"}

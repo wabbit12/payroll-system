@@ -8,6 +8,7 @@ const NAV: { href: string; label: string; rolesHint: string }[] = [
   { href: "/me", label: "My profile", rolesHint: "all" },
   { href: "/me/timesheets", label: "My timesheets", rolesHint: "all" },
   { href: "/me/payslips", label: "My payslips", rolesHint: "all" },
+  { href: "/notifications", label: "Notifications", rolesHint: "all" },
   { href: "/manager", label: "Manager approvals", rolesHint: "manager+" },
   { href: "/hr", label: "HR / Employees", rolesHint: "hr_admin" },
   { href: "/payroll", label: "Payroll", rolesHint: "payroll_admin" },
@@ -81,6 +82,7 @@ export default async function DashboardPage({
           {NAV.map((item) => {
             const allowed =
               item.href.startsWith("/me") ||
+              item.href === "/notifications" ||
               canAccessPath(item.href, role as UserRole | null);
             return (
               <li key={item.href}>
@@ -108,7 +110,7 @@ export default async function DashboardPage({
       </section>
 
       <p className="mt-8 text-sm text-zinc-600">
-        Phase 6: payslips. Next: payments.{" "}
+        Phase 9: PH statutory deductions on pay runs.{" "}
         <Link href="/" className="underline">
           Home
         </Link>

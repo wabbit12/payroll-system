@@ -1,7 +1,15 @@
-import type { Employee, PayType, TimesheetEntry } from "@/types/database";
+import type {
+  Employee,
+  PayFrequency,
+  PayType,
+  TimesheetEntry,
+} from "@/types/database";
+import { calculatePhStatutoryDeductions } from "@/lib/payroll/ph-statutory";
 
-export const DEFAULT_TAX_RATE = 0.1; // 10% placeholder statutory deduction
 export const OVERTIME_MULTIPLIER = 1.5;
+
+/** @deprecated Flat tax replaced by PH statutory / BIR. Kept for old form defaults. */
+export const DEFAULT_TAX_RATE = 0;
 
 export type HoursBreakdown = {
   regularHours: number;
@@ -12,7 +20,7 @@ export type HoursBreakdown = {
 export type EmployeePayInput = {
   employee: Pick<
     Employee,
-    "id" | "full_name" | "pay_type" | "pay_rate" | "status"
+    "id" | "full_name" | "pay_type" | "pay_rate" | "status" | "pay_frequency"
   >;
   hours: HoursBreakdown;
 };
@@ -29,6 +37,10 @@ export type PayLineResult = {
   gross_pay: number;
   tax_amount: number;
   other_deductions: number;
+  sss_employee: number;
+  philhealth_employee: number;
+  pagibig_employee: number;
+  monthly_compensation: number;
   net_pay: number;
   calc_note: string | null;
   timesheet_ids: string[];
@@ -59,7 +71,6 @@ export function summarizeApprovedHours(
         overtimeHours += hours;
         used = true;
       }
-      // unpaid_leave: no pay
     }
     if (used) timesheetIds.push(group.timesheetId);
   }
@@ -72,39 +83,48 @@ export function summarizeApprovedHours(
 }
 
 /**
- * MVP pay rules:
- * - salary: pay_rate is the amount for this pay period
- * - hourly: regular * rate + overtime * rate * 1.5 from approved timesheets
- * - tax: flat taxRate on gross (placeholder until country rules)
+ * Pay rules + PH statutory deductions:
+ * - salary: pay_rate = amount for this pay period
+ * - hourly: regular * rate + OT * rate * 1.5 from approved timesheets
+ * - deductions: SSS, PhilHealth, Pag-IBIG (EE) + BIR withholding
  */
-export function calculateEmployeePay(
-  input: EmployeePayInput,
-  taxRate: number,
-): PayLineResult {
+export function calculateEmployeePay(input: EmployeePayInput): PayLineResult {
   const rate = Number(input.employee.pay_rate);
   const { regularHours, overtimeHours, timesheetIds } = input.hours;
+  const payFrequency = (input.employee.pay_frequency ??
+    "monthly") as PayFrequency;
 
   let regular_pay = 0;
   let overtime_pay = 0;
-  let calc_note: string | null = null;
+  let earnings_note: string | null = null;
 
   if (input.employee.pay_type === "salary") {
     regular_pay = rate;
-    calc_note = "Salary: pay_rate treated as period amount.";
+    earnings_note = "Salary: pay_rate treated as period amount.";
   } else {
     regular_pay = regularHours * rate;
     overtime_pay = overtimeHours * rate * OVERTIME_MULTIPLIER;
     if (regularHours === 0 && overtimeHours === 0) {
-      calc_note = "No approved regular/overtime hours in this period.";
+      earnings_note = "No approved regular/overtime hours in this period.";
     } else {
-      calc_note = `Hourly: OT × ${OVERTIME_MULTIPLIER}.`;
+      earnings_note = `Hourly: OT × ${OVERTIME_MULTIPLIER}.`;
     }
   }
 
   const gross_pay = money(regular_pay + overtime_pay);
-  const tax_amount = money(gross_pay * taxRate);
-  const other_deductions = 0;
+
+  const statutory = calculatePhStatutoryDeductions({
+    payType: input.employee.pay_type,
+    payRate: rate,
+    periodGross: gross_pay,
+    payFrequency,
+  });
+
+  const tax_amount = statutory.birWithholding;
+  const other_deductions = statutory.statutoryEmployeeTotal;
   const net_pay = money(gross_pay - tax_amount - other_deductions);
+
+  const calc_note = [earnings_note, statutory.note].filter(Boolean).join(" ");
 
   return {
     employee_id: input.employee.id,
@@ -118,6 +138,10 @@ export function calculateEmployeePay(
     gross_pay,
     tax_amount,
     other_deductions,
+    sss_employee: statutory.sssEmployee,
+    philhealth_employee: statutory.philhealthEmployee,
+    pagibig_employee: statutory.pagibigEmployee,
+    monthly_compensation: statutory.monthlyCompensation,
     net_pay,
     calc_note,
     timesheet_ids: timesheetIds,

@@ -23,6 +23,7 @@ export const PROTECTED_PREFIXES = [
   "/admin",
   "/mfa",
   "/me",
+  "/notifications",
   "/auth/update-password",
 ] as const;
 

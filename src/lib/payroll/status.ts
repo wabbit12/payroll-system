@@ -1,4 +1,4 @@
-import type { PayRunStatus } from "@/types/database";
+import type { PayRunStatus, PaymentStatus } from "@/types/database";
 
 /** Editable / recalculable statuses. */
 export function isPayRunEditable(status: PayRunStatus): boolean {
@@ -30,5 +30,18 @@ export function payRunStatusLabel(status: PayRunStatus): string {
       return "Rejected";
     case "locked":
       return "Locked";
+  }
+}
+
+export function paymentStatusLabel(status: PaymentStatus): string {
+  switch (status) {
+    case "unpaid":
+      return "Unpaid";
+    case "pending":
+      return "Pending (simulated)";
+    case "paid":
+      return "Paid (simulated)";
+    case "failed":
+      return "Failed";
   }
 }

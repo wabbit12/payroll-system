@@ -18,12 +18,15 @@ export type PayslipPdfInput = {
   grossPay: number;
   taxAmount: number;
   otherDeductions: number;
+  sssEmployee?: number;
+  philhealthEmployee?: number;
+  pagibigEmployee?: number;
   netPay: number;
   calcNote?: string | null;
 };
 
 function money(n: number): string {
-  return `$${Number(n).toFixed(2)}`;
+  return `PHP ${Number(n).toFixed(2)}`;
 }
 
 export async function buildPayslipPdf(
@@ -77,8 +80,13 @@ export async function buildPayslipPdf(
   y -= 8;
 
   write("Deductions", { bold: true, size: 11 });
-  write(`Tax: ${money(input.taxAmount)}`);
-  write(`Other: ${money(input.otherDeductions)}`);
+  write(`SSS (EE): ${money(input.sssEmployee ?? 0)}`);
+  write(`PhilHealth (EE): ${money(input.philhealthEmployee ?? 0)}`);
+  write(`Pag-IBIG (EE): ${money(input.pagibigEmployee ?? 0)}`);
+  write(`BIR withholding: ${money(input.taxAmount)}`);
+  if (input.otherDeductions > 0) {
+    write(`Statutory subtotal: ${money(input.otherDeductions)}`);
+  }
   y -= 8;
 
   write(`Net pay: ${money(input.netPay)}`, { bold: true, size: 12 });

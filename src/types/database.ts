@@ -103,6 +103,8 @@ export type PayRunStatus =
   | "rejected"
   | "locked";
 
+export type PaymentStatus = "unpaid" | "pending" | "paid" | "failed";
+
 export type PayRun = {
   id: string;
   period_start: string;
@@ -121,8 +123,14 @@ export type PayRun = {
   review_note: string | null;
   locked_at: string | null;
   locked_by: string | null;
+  payment_status: PaymentStatus;
+  payment_provider: string;
+  payment_reference: string | null;
+  payment_note: string | null;
+  payment_started_at: string | null;
+  payment_completed_at: string | null;
+  payment_by: string | null;
 };
-
 export type PayRunLine = {
   id: string;
   pay_run_id: string;
@@ -137,6 +145,10 @@ export type PayRunLine = {
   gross_pay: number;
   tax_amount: number;
   other_deductions: number;
+  sss_employee: number;
+  philhealth_employee: number;
+  pagibig_employee: number;
+  monthly_compensation: number | null;
   net_pay: number;
   calc_note: string | null;
   created_at: string;
@@ -167,4 +179,25 @@ export type Payslip = {
   net_pay: number;
   generated_by: string | null;
   generated_at: string;
+};
+
+export type AuditLog = {
+  id: string;
+  actor_id: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  summary: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type Notification = {
+  id: string;
+  user_id: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  read_at: string | null;
+  created_at: string;
 };

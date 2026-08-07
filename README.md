@@ -137,6 +137,41 @@ Flow: `draft` → `pending_approval` → `approved` → `locked` (or `rejected` 
 
 Email “payslip ready” is deferred (Phase 8 / notifications).
 
+## Phase 7 — Simulated payments (PH)
+
+1. Run `supabase/migrations/010_payments.sql`
+2. On an **approved** or **locked** pay run:
+   - **Mark paid (simulate)** / pending / failed
+   - **Download bank CSV** (masked account numbers, PHP net pay)
+3. Draft / pending-approval / rejected runs cannot be paid
+
+No live bank integration — status is tracked in-app for workflow practice.
+
+## Phase 8 — Audit, notifications, reports
+
+1. Run `supabase/migrations/011_audit_notifications.sql`
+2. Sensitive actions write to **Audit log** (`/payroll/audit`): approve/lock, payments, CSV export, employee create/update, payslip generate
+3. **Notifications** (`/notifications`): approval needed, payslip ready, payment failed
+4. **Reports** (`/payroll/reports`): gross / tax / net totals, by department, by run status
+
+Email delivery is still stubbed as in-app only.
+
+## Phase 9 � PH statutory deductions
+
+1. Run `supabase/migrations/012_ph_statutory.sql`
+2. Recalculate a **draft** pay run (or create a new one)
+3. Line items show **SSS / PhilHealth / Pag-IBIG / BIR** employee shares
+4. Payslips and reports use the same breakdown (PHP)
+
+Rules (MVP approximations for 2025-2026):
+- **SSS EE:** 5% of Monthly Salary Credit (5000-35000 PHP, stepped)
+- **PhilHealth EE:** 2.5% of basic (floor 10k / ceiling 100k)
+- **Pag-IBIG EE:** 2% of compensation up to 10000 MFS (1% if <= 1500)
+- **BIR:** simplified TRAIN monthly brackets on taxable pay after EE contributions
+- Amounts are scaled by pay frequency (e.g. semimonthly = half of monthly)
+
+Not included yet: employer remittance ledgers, SSS MPF/WISP detail, official MSC table rows, 13th-month.
+
 ## What's next
 
-Phase 7 — Payment provider + payment status
+UI polish, live payment rails, email via Resend, or employer contribution reports.

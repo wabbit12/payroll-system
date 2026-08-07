@@ -18,7 +18,8 @@ export default async function PayrollPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Pay runs</h1>
           <p className="mt-2 text-sm text-zinc-600">
             Create a draft run for a period. Salary uses period pay rate; hourly
-            uses approved timesheet hours. Tax is a simple flat % for now.
+            uses approved timesheet hours. Deductions: PH SSS, PhilHealth,
+            Pag-IBIG, and BIR withholding.
           </p>
         </div>
         <Link
@@ -28,6 +29,15 @@ export default async function PayrollPage() {
           New pay run
         </Link>
       </div>
+
+      <p className="mt-4 flex flex-wrap gap-4 text-sm">
+        <Link href="/payroll/reports" className="underline">
+          Reports
+        </Link>
+        <Link href="/payroll/audit" className="underline">
+          Audit log
+        </Link>
+      </p>
 
       {loadError ? (
         <p className="mt-6 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -53,8 +63,12 @@ export default async function PayrollPage() {
                 {run.period_start} → {run.period_end}
               </Link>
               <div className="mt-1 text-xs text-zinc-500">
-                Tax {(Number(run.tax_rate) * 100).toFixed(1)}% ·{" "}
+                PH statutory ·{" "}
                 <span className="font-mono">{run.status}</span>
+                {" · "}
+                <span className="font-mono">
+                  {run.payment_status ?? "unpaid"}
+                </span>
                 {run.calculated_at
                   ? ` · calculated ${new Date(run.calculated_at).toLocaleString()}`
                   : ""}

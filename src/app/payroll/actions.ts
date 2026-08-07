@@ -2,15 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import {
-  DEFAULT_TAX_RATE,
-  calculateEmployeePay,
-  summarizeApprovedHours,
-} from "@/lib/payroll/calculate";
+import { writeAuditLog } from "@/lib/audit/log";
+import { calculateEmployeePay, summarizeApprovedHours } from "@/lib/payroll/calculate";
 import {
   canMarkPayRunPaid,
   isPayRunEditable,
 } from "@/lib/payroll/status";
+import { notifyRoles } from "@/lib/notifications/notify";
 import { createClient } from "@/lib/supabase/server";
 import type {
   Employee,
@@ -53,7 +51,12 @@ export async function listPayRuns(): Promise<PayRun[]> {
     .returns<PayRun[]>();
 
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => ({ ...r, tax_rate: Number(r.tax_rate) }));
+  return (data ?? []).map((r) => ({
+    ...r,
+    tax_rate: Number(r.tax_rate),
+    payment_status: r.payment_status ?? "unpaid",
+    payment_provider: r.payment_provider ?? "simulated",
+  }));
 }
 
 export async function getPayRun(id: string): Promise<PayRunWithLines | null> {
@@ -86,10 +89,25 @@ export async function getPayRun(id: string): Promise<PayRunWithLines | null> {
     gross_pay: Number(l.gross_pay),
     tax_amount: Number(l.tax_amount),
     other_deductions: Number(l.other_deductions),
+    sss_employee: Number(l.sss_employee ?? 0),
+    philhealth_employee: Number(l.philhealth_employee ?? 0),
+    pagibig_employee: Number(l.pagibig_employee ?? 0),
+    monthly_compensation:
+      l.monthly_compensation == null
+        ? null
+        : Number(l.monthly_compensation),
     net_pay: Number(l.net_pay),
   }));
 
-  return withTotals({ ...run, tax_rate: Number(run.tax_rate) }, normalized);
+  return withTotals(
+    {
+      ...run,
+      tax_rate: Number(run.tax_rate),
+      payment_status: run.payment_status ?? "unpaid",
+      payment_provider: run.payment_provider ?? "simulated",
+    },
+    normalized,
+  );
 }
 
 export async function createPayRun(
@@ -99,17 +117,12 @@ export async function createPayRun(
   const period_start = String(formData.get("period_start") ?? "").trim();
   const period_end = String(formData.get("period_end") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim() || null;
-  const taxRaw = String(formData.get("tax_rate") ?? "").trim();
-  const tax_rate = taxRaw === "" ? DEFAULT_TAX_RATE : Number(taxRaw) / 100;
 
   if (!period_start || !period_end) {
     return { error: "Period start and end are required." };
   }
   if (period_end < period_start) {
     return { error: "Period end must be on or after start." };
-  }
-  if (!(tax_rate >= 0) || tax_rate > 1 || Number.isNaN(tax_rate)) {
-    return { error: "Tax rate must be between 0 and 100%." };
   }
 
   const supabase = await createClient();
@@ -124,7 +137,8 @@ export async function createPayRun(
       period_start,
       period_end,
       status: "draft",
-      tax_rate,
+      // Legacy column; PH statutory engine computes BIR + contributions.
+      tax_rate: 0,
       notes,
       created_by: user.id,
     })
@@ -161,14 +175,20 @@ export async function calculatePayRun(
     return { error: "Only draft or rejected pay runs can be recalculated." };
   }
 
-  const taxRate = Number(run.tax_rate);
-
   const { data: employees, error: empError } = await supabase
     .from("employees")
-    .select("id, full_name, pay_type, pay_rate, status")
+    .select("id, full_name, pay_type, pay_rate, pay_frequency, status")
     .eq("status", "active")
     .returns<
-      Pick<Employee, "id" | "full_name" | "pay_type" | "pay_rate" | "status">[]
+      Pick<
+        Employee,
+        | "id"
+        | "full_name"
+        | "pay_type"
+        | "pay_rate"
+        | "pay_frequency"
+        | "status"
+      >[]
     >();
 
   if (empError) return { error: empError.message };
@@ -216,16 +236,13 @@ export async function calculatePayRun(
       entries: entries.filter((e) => e.timesheet_id === t.id),
     }));
     const hours = summarizeApprovedHours(grouped);
-    const line = calculateEmployeePay(
-      {
-        employee: {
-          ...employee,
-          pay_rate: Number(employee.pay_rate),
-        },
-        hours,
+    const line = calculateEmployeePay({
+      employee: {
+        ...employee,
+        pay_rate: Number(employee.pay_rate),
       },
-      taxRate,
-    );
+      hours,
+    });
 
     // Skip hourly with zero pay and no hours? Still include for visibility.
     const { data: inserted, error: lineError } = await supabase
@@ -243,6 +260,10 @@ export async function calculatePayRun(
         gross_pay: line.gross_pay,
         tax_amount: line.tax_amount,
         other_deductions: line.other_deductions,
+        sss_employee: line.sss_employee,
+        philhealth_employee: line.philhealth_employee,
+        pagibig_employee: line.pagibig_employee,
+        monthly_compensation: line.monthly_compensation,
         net_pay: line.net_pay,
         calc_note: line.calc_note,
       })
@@ -338,6 +359,24 @@ export async function submitPayRunForApproval(
 
   if (error) return { error: error.message };
 
+  await writeAuditLog({
+    action: "pay_run.submit",
+    entityType: "pay_run",
+    entityId: payRunId,
+    summary: `Submitted ${run.period_start} to ${run.period_end} for approval`,
+    metadata: {
+      period_start: run.period_start,
+      period_end: run.period_end,
+      net: run.totals.net,
+    },
+  });
+
+  await notifyRoles(["payroll_admin", "super_admin"], {
+    title: "Pay run needs approval",
+    body: `${run.period_start} to ${run.period_end} is pending approval.`,
+    link: `/payroll/${payRunId}`,
+  });
+
   revalidatePath("/payroll");
   revalidatePath(`/payroll/${payRunId}`);
   return { ok: true };
@@ -367,6 +406,14 @@ export async function approvePayRun(
     .eq("status", "pending_approval");
 
   if (error) return { error: error.message };
+
+  await writeAuditLog({
+    action: "pay_run.approve",
+    entityType: "pay_run",
+    entityId: payRunId,
+    summary: "Approved pay run",
+    metadata: { review_note },
+  });
 
   revalidatePath("/payroll");
   revalidatePath(`/payroll/${payRunId}`);
@@ -402,6 +449,14 @@ export async function rejectPayRun(
 
   if (error) return { error: error.message };
 
+  await writeAuditLog({
+    action: "pay_run.reject",
+    entityType: "pay_run",
+    entityId: payRunId,
+    summary: "Rejected pay run",
+    metadata: { review_note },
+  });
+
   revalidatePath("/payroll");
   revalidatePath(`/payroll/${payRunId}`);
   return { ok: true };
@@ -426,14 +481,21 @@ export async function lockPayRun(payRunId: string): Promise<PayRunFormState> {
 
   if (error) return { error: error.message };
 
+  await writeAuditLog({
+    action: "pay_run.lock",
+    entityType: "pay_run",
+    entityId: payRunId,
+    summary: "Locked pay run (immutable lines)",
+  });
+
   revalidatePath("/payroll");
   revalidatePath(`/payroll/${payRunId}`);
   return { ok: true };
 }
 
 /**
- * Phase 7 will call this. Phase 5 only enforces the gate:
- * unapproved runs cannot be marked paid.
+ * Gate used by payment actions: run must be approved/locked,
+ * and not already paid.
  */
 export async function assertPayRunPayable(
   payRunId: string,
@@ -444,6 +506,9 @@ export async function assertPayRunPayable(
     return {
       error: `Cannot mark paid: status is "${run.status}". Approve (and optionally lock) first.`,
     };
+  }
+  if (run.payment_status === "paid") {
+    return { error: "This pay run is already marked paid." };
   }
   return { ok: true };
 }
